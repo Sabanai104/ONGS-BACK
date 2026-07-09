@@ -138,3 +138,46 @@ export async function buscarOngPorId(req: Request, res: Response) {
     return res.status(500).json({ message: "Erro interno ao buscar ONG." });
   }
 }
+
+export async function criarOng(req: Request, res: Response) {
+  try {
+    const {
+      titulo,
+      imagem,
+      descricao,
+      comoAjudar,
+      impactosRealizados,
+      localizacao,
+      linkSite,
+      linkInstagram,
+      categorias
+    } = req.body ?? {};
+
+    const ong = await Ong.create({
+      titulo,
+      imagem,
+      descricao,
+      comoAjudar,
+      impactosRealizados,
+      localizacao: localizacao
+        ? {
+            latitude: localizacao.latitude,
+            longitude: localizacao.longitude,
+            nomeEndereco: localizacao.nomeEndereco
+          }
+        : undefined,
+      linkSite: linkSite ?? null,
+      linkInstagram: linkInstagram ?? null,
+      categorias: categorias ?? []
+    });
+
+    return res.status(201).json(ong.toJSON());
+  } catch (error) {
+    if (error instanceof mongoose.Error.ValidationError) {
+      const campos = Object.keys(error.errors).join(", ");
+      return res.status(400).json({ message: `Campos inválidos: ${campos}.` });
+    }
+    console.error("❌ Erro ao criar ONG", error);
+    return res.status(500).json({ message: "Erro interno ao criar ONG." });
+  }
+}

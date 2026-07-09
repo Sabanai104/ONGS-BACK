@@ -159,3 +159,76 @@ describe("GET /ongs/:id", () => {
     expect(response.body.linkInstagram).toBe("https://www.instagram.com/amigosdobem");
   });
 });
+
+describe("POST /ongs", () => {
+  const payloadOngValida = (overrides: Record<string, unknown> = {}) => ({
+    titulo: "Amigos do Bem",
+    imagem: "https://cdn.exemplo.com/img.jpg",
+    descricao: "Descrição da ONG",
+    comoAjudar: "Como ajudar a ONG",
+    impactosRealizados: "Impactos já realizados",
+    localizacao: { latitude: -23.55052, longitude: -46.633308, nomeEndereco: "Av. Paulista, 1000" },
+    categorias: ["educação"],
+    ...overrides
+  });
+
+  it("cria uma ONG e retorna 201 com o recurso criado", async () => {
+    const response = await request(app).post("/ongs").send(payloadOngValida());
+
+    expect(response.status).toBe(201);
+    expect(response.body).toEqual({
+      id: expect.any(String),
+      titulo: "Amigos do Bem",
+      imagem: "https://cdn.exemplo.com/img.jpg",
+      descricao: "Descrição da ONG",
+      comoAjudar: "Como ajudar a ONG",
+      impactosRealizados: "Impactos já realizados",
+      localizacao: {
+        latitude: -23.55052,
+        longitude: -46.633308,
+        nomeEndereco: "Av. Paulista, 1000"
+      },
+      linkSite: null,
+      linkInstagram: null,
+      categorias: ["educação"],
+      createdAt: expect.any(String),
+      updatedAt: expect.any(String)
+    });
+
+    const salvas = await Ong.countDocuments();
+    expect(salvas).toBe(1);
+  });
+
+  it("deriva localizacaoGeo a partir de localizacao (verificado via busca por proximidade)", async () => {
+    await request(app).post("/ongs").send(payloadOngValida());
+
+    const response = await request(app)
+      .get("/ongs")
+      .query({ lat: -23.55052, lng: -46.633308, raioKm: 1 });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(1);
+  });
+
+  it("retorna 400 quando 'titulo' está ausente", async () => {
+    const { titulo, ...payload } = payloadOngValida();
+    const response = await request(app).post("/ongs").send(payload);
+
+    expect(response.status).toBe(400);
+  });
+
+  it("retorna 400 quando 'localizacao' está ausente", async () => {
+    const { localizacao, ...payload } = payloadOngValida();
+    const response = await request(app).post("/ongs").send(payload);
+
+    expect(response.status).toBe(400);
+  });
+
+  it("retorna 400 quando 'localizacao.latitude' é inválida", async () => {
+    const response = await request(app)
+      .post("/ongs")
+      .send(payloadOngValida({ localizacao: { latitude: "não-numero", longitude: -46.633308, nomeEndereco: "X" } }));
+
+    expect(response.status).toBe(400);
+  });
+});

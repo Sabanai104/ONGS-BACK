@@ -13,10 +13,11 @@ Está dentro do escopo:
 - Modelo de dados `ONG` (schema Mongoose) contemplando os campos usados na listagem e no detalhe.
 - Endpoint `GET /ongs` (listagem resumida).
 - Endpoint `GET /ongs/:id` (detalhe completo).
-- Validações e tratamento de erros dos dois endpoints.
+- Endpoint `POST /ongs` (criação).
+- Validações e tratamento de erros dos endpoints.
 
 Fora do escopo deste documento:
-- Criação, edição e remoção de ONGs (CRUD de escrita).
+- Edição e remoção de ONGs (`PUT`/`PATCH`/`DELETE`).
 - Autenticação/autorização.
 - Upload de imagens (o campo de imagem assume que já existe uma URL disponível).
 
@@ -148,12 +149,73 @@ const OngSchema = new Schema(
 | 404 | ONG não encontrada |
 | 500 | Erro inesperado |
 
+---
+
+### 4.3 `POST /ongs` — Criar ONG
+
+**Descrição:** cria uma nova ONG a partir dos dados enviados no corpo da requisição.
+
+**Request**
+- Método: `POST`
+- Path: `/ongs`
+- Body (`application/json`):
+
+```json
+{
+  "titulo": "Amigos do Bem",
+  "imagem": "https://cdn.exemplo.com/ongs/amigos-do-bem.jpg",
+  "descricao": "ONG dedicada a combater a fome e a pobreza extrema no semiárido brasileiro.",
+  "comoAjudar": "Você pode doar mensalmente, se voluntariar ou doar itens.",
+  "impactosRealizados": "Mais de 1 milhão de pessoas atendidas desde a fundação.",
+  "localizacao": {
+    "latitude": -23.55052,
+    "longitude": -46.633308,
+    "nomeEndereco": "Av. Paulista, 1000 — Bela Vista, São Paulo/SP"
+  },
+  "linkSite": "https://www.amigosdobem.org",
+  "linkInstagram": "https://www.instagram.com/amigosdobem",
+  "categorias": ["combate à fome", "assistência social"]
+}
+```
+
+| Campo | Obrigatório | Observações |
+|---|---|---|
+| `titulo` | sim | |
+| `imagem` | sim | URL |
+| `descricao` | sim | |
+| `comoAjudar` | sim | |
+| `impactosRealizados` | sim | |
+| `localizacao.latitude` | sim | |
+| `localizacao.longitude` | sim | |
+| `localizacao.nomeEndereco` | sim | |
+| `linkSite` | não | default `null` se omitido |
+| `linkInstagram` | não | default `null` se omitido |
+| `categorias` | não | default `[]` se omitido |
+
+**Response — 201 Created**
+
+Retorna o recurso criado, no mesmo formato de `GET /ongs/:id` (ver 4.2), incluindo `id`, `createdAt` e `updatedAt` gerados pelo MongoDB/Mongoose.
+
+**Regras de negócio**
+- Apenas os campos listados na tabela acima são aceitos do corpo da requisição; qualquer outro campo enviado (ex.: `localizacaoGeo`, `id`) é ignorado.
+- `localizacaoGeo` (GeoJSON usado na busca por proximidade, ver seção 8) nunca é aceito do cliente — é sempre derivado no servidor a partir de `localizacao.latitude`/`longitude`.
+- A validação de obrigatoriedade e tipos é feita pelo schema Mongoose (`Ong.create(...)`); qualquer violação retorna `400`.
+
+**Erros**
+| Status | Cenário |
+|---|---|
+| 400 | Campo obrigatório ausente (ex.: `titulo`, `localizacao`) |
+| 400 | Campo com tipo inválido (ex.: `localizacao.latitude` não numérico) |
+| 500 | Erro inesperado (ex.: falha de conexão com o banco) |
+
+A mensagem de erro em `400` lista os campos inválidos, ex.: `{ "message": "Campos inválidos: titulo, localizacao.latitude." }`.
+
 ## 5. Requisitos não funcionais
 
 - Endpoints devem responder com `Content-Type: application/json`.
 - Estrutura de rotas deve seguir o padrão já existente em `src/routes/index.ts` (Express Router).
 - Modelo deve seguir o padrão já existente em `src/models/User.ts` (Mongoose Schema + `model()`).
-- Cobertura de testes (Jest + Supertest) para os dois endpoints, incluindo os casos de erro (400/404) e o caso de lista vazia.
+- Cobertura de testes (Jest + Supertest) para os três endpoints, incluindo os casos de erro (400/404) e o caso de lista vazia.
 
 ## 6. Perguntas em aberto (respondidas)
 
@@ -209,6 +271,7 @@ const OngSchema = new Schema(
 
 ## 8. Implementação
 
-- Modelo: `src/models/Ong.ts` — schema Mongoose com `localizacao` (lat/long/nomeEndereco expostos na API) e um campo interno `localizacaoGeo` (GeoJSON `Point`, indexado com `2dsphere`) mantido em sincronia via hook `pre("validate")`, usado apenas para viabilizar a busca por proximidade (`$geoNear`).
-- Rotas: `src/routes/ongs.ts`, montadas em `src/routes/index.ts`.
-- Testes: `src/__tests__/ongs.spec.ts`, usando `mongodb-memory-server` para subir um MongoDB em memória (o suite existente de `health.spec.ts` não usa banco).
+- Modelo: `src/models/Ong.ts` — schema Mongoose com `localizacao` (lat/long/nomeEndereco expostos na API) e um campo interno `localizacaoGeo` (GeoJSON `Point`, indexado com `2dsphere`) mantido em sincronia via hook `pre("validate")`, usado apenas para viabilizar a busca por proximidade (`$geoNear`). Esse hook só é executado em `.save()`/`Model.create()` — por isso a criação (`POST /ongs`) usa `Ong.create(...)`, nunca um update baseado em query (`findOneAndUpdate` não dispararia o hook e deixaria `localizacaoGeo` desatualizado).
+- Controller: `src/controllers/ongController.ts` — `listarOngs`, `buscarOngPorId` e `criarOng`. `criarOng` extrai explicitamente os campos aceitos do `req.body` (whitelist), delega a validação de obrigatoriedade/tipo ao schema Mongoose e mapeia `mongoose.Error.ValidationError` para `400` com mensagem citando os campos inválidos.
+- Rotas: `src/routes/ongs.ts` (`GET /ongs`, `GET /ongs/:id`, `POST /ongs`), montadas em `src/routes/index.ts`.
+- Testes: `src/__tests__/ongs.spec.ts`, usando `mongodb-memory-server` para subir um MongoDB em memória (o suite existente de `health.spec.ts` não usa banco). O bloco `describe("POST /ongs", ...)` cobre o caso de sucesso (201, shape completo do recurso), a derivação de `localizacaoGeo` (verificada indiretamente via busca por proximidade) e os casos de `400` (campo obrigatório ausente e tipo inválido).
