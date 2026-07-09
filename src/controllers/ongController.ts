@@ -236,3 +236,24 @@ export async function atualizarOng(req: Request, res: Response) {
     return res.status(500).json({ message: "Erro interno ao atualizar ONG." });
   }
 }
+
+export async function deletarOng(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id);
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Id inválido." });
+    }
+
+    const ong = await Ong.findByIdAndDelete(id);
+
+    if (!ong) {
+      return res.status(404).json({ message: "ONG não encontrada." });
+    }
+
+    return res.status(204).send();
+  } catch (error) {
+    console.error("❌ Erro ao deletar ONG", error);
+    return res.status(500).json({ message: "Erro interno ao deletar ONG." });
+  }
+}

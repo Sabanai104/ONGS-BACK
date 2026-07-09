@@ -15,10 +15,10 @@ Está dentro do escopo:
 - Endpoint `GET /ongs/:id` (detalhe completo).
 - Endpoint `POST /ongs` (criação).
 - Endpoint `PUT /ongs/:id` (edição).
+- Endpoint `DELETE /ongs/:id` (remoção).
 - Validações e tratamento de erros dos endpoints.
 
 Fora do escopo deste documento:
-- Remoção de ONGs (`DELETE`).
 - Autenticação/autorização.
 - Upload de imagens (o campo de imagem assume que já existe uma URL disponível).
 
@@ -262,12 +262,34 @@ Retorna o recurso atualizado, no mesmo formato de `GET /ongs/:id` (ver 4.2).
 
 A mensagem de erro em `400` de validação lista os campos inválidos, no mesmo formato de `POST /ongs`.
 
+---
+
+### 4.5 `DELETE /ongs/:id` — Remover ONG
+
+**Descrição:** remove definitivamente uma ONG.
+
+**Request**
+- Método: `DELETE`
+- Path: `/ongs/:id`
+- Path param: `id` — ObjectId da ONG
+
+**Response — 204 No Content**
+
+Sem corpo na resposta.
+
+**Erros**
+| Status | Cenário |
+|---|---|
+| 400 | `id` com formato inválido |
+| 404 | ONG não encontrada |
+| 500 | Erro inesperado |
+
 ## 5. Requisitos não funcionais
 
 - Endpoints devem responder com `Content-Type: application/json`.
 - Estrutura de rotas deve seguir o padrão já existente em `src/routes/index.ts` (Express Router).
 - Modelo deve seguir o padrão já existente em `src/models/User.ts` (Mongoose Schema + `model()`).
-- Cobertura de testes (Jest + Supertest) para os quatro endpoints, incluindo os casos de erro (400/404) e o caso de lista vazia.
+- Cobertura de testes (Jest + Supertest) para os cinco endpoints, incluindo os casos de erro (400/404) e o caso de lista vazia.
 
 ## 6. Perguntas em aberto (respondidas)
 
@@ -324,6 +346,6 @@ A mensagem de erro em `400` de validação lista os campos inválidos, no mesmo 
 ## 8. Implementação
 
 - Modelo: `src/models/Ong.ts` — schema Mongoose com `localizacao` (lat/long/nomeEndereco expostos na API) e um campo interno `localizacaoGeo` (GeoJSON `Point`, indexado com `2dsphere`) mantido em sincronia via hook `pre("validate")`, usado apenas para viabilizar a busca por proximidade (`$geoNear`). Esse hook só é executado em `.save()`/`Model.create()` — por isso tanto a criação (`POST /ongs`, via `Ong.create(...)`) quanto a edição (`PUT /ongs/:id`, via `Ong.findById(...)` + `.save()`) evitam updates baseados em query (`findByIdAndUpdate`/`findOneAndUpdate` não disparam o hook e deixariam `localizacaoGeo` desatualizado).
-- Controller: `src/controllers/ongController.ts` — `listarOngs`, `buscarOngPorId`, `criarOng` e `atualizarOng`. `criarOng`/`atualizarOng` extraem explicitamente os campos aceitos do `req.body` (whitelist), delegam a validação de tipo/obrigatoriedade ao schema Mongoose e mapeiam `mongoose.Error.ValidationError` para `400` com mensagem citando os campos inválidos. `atualizarOng` só atribui um campo na instância se ele vier `!== undefined` no body, implementando a atualização parcial.
-- Rotas: `src/routes/ongs.ts` (`GET /ongs`, `GET /ongs/:id`, `POST /ongs`, `PUT /ongs/:id`), montadas em `src/routes/index.ts`.
-- Testes: `src/__tests__/ongs.spec.ts`, usando `mongodb-memory-server` para subir um MongoDB em memória (o suite existente de `health.spec.ts` não usa banco). O bloco `describe("POST /ongs", ...)` cobre o caso de sucesso (201, shape completo do recurso), a derivação de `localizacaoGeo` (verificada indiretamente via busca por proximidade) e os casos de `400` (campo obrigatório ausente e tipo inválido). O bloco `describe("PUT /ongs/:id", ...)` cobre a atualização parcial (demais campos preservados), a re-derivação de `localizacaoGeo` ao editar `localizacao` (verificada via busca por proximidade nos pontos antigo e novo), `400` para `id` inválido e para tipo inválido, e `404` para ONG inexistente.
+- Controller: `src/controllers/ongController.ts` — `listarOngs`, `buscarOngPorId`, `criarOng`, `atualizarOng` e `deletarOng`. `criarOng`/`atualizarOng` extraem explicitamente os campos aceitos do `req.body` (whitelist), delegam a validação de tipo/obrigatoriedade ao schema Mongoose e mapeiam `mongoose.Error.ValidationError` para `400` com mensagem citando os campos inválidos. `atualizarOng` só atribui um campo na instância se ele vier `!== undefined` no body, implementando a atualização parcial. `deletarOng` usa `Ong.findByIdAndDelete(id)` (não precisa disparar o hook `pre("validate")`, já que remoção não envolve validação de schema) e retorna `204` sem corpo.
+- Rotas: `src/routes/ongs.ts` (`GET /ongs`, `GET /ongs/:id`, `POST /ongs`, `PUT /ongs/:id`, `DELETE /ongs/:id`), montadas em `src/routes/index.ts`.
+- Testes: `src/__tests__/ongs.spec.ts`, usando `mongodb-memory-server` para subir um MongoDB em memória (o suite existente de `health.spec.ts` não usa banco). O bloco `describe("POST /ongs", ...)` cobre o caso de sucesso (201, shape completo do recurso), a derivação de `localizacaoGeo` (verificada indiretamente via busca por proximidade) e os casos de `400` (campo obrigatório ausente e tipo inválido). O bloco `describe("PUT /ongs/:id", ...)` cobre a atualização parcial (demais campos preservados), a re-derivação de `localizacaoGeo` ao editar `localizacao` (verificada via busca por proximidade nos pontos antigo e novo), `400` para `id` inválido e para tipo inválido, e `404` para ONG inexistente. O bloco `describe("DELETE /ongs/:id", ...)` cobre a remoção (204, documento removido do banco), `400` para `id` inválido e `404` para ONG inexistente.

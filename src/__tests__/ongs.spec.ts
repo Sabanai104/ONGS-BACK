@@ -299,3 +299,28 @@ describe("PUT /ongs/:id", () => {
     expect(response.status).toBe(400);
   });
 });
+
+describe("DELETE /ongs/:id", () => {
+  it("deleta uma ONG existente e retorna 204", async () => {
+    const ong = await criarOng();
+
+    const response = await request(app).delete(`/ongs/${ong.id}`);
+
+    expect(response.status).toBe(204);
+    expect(response.body).toEqual({});
+
+    const salvas = await Ong.countDocuments();
+    expect(salvas).toBe(0);
+  });
+
+  it("retorna 400 para id em formato inválido", async () => {
+    const response = await request(app).delete("/ongs/id-invalido");
+    expect(response.status).toBe(400);
+  });
+
+  it("retorna 404 quando a ONG não existe", async () => {
+    const idInexistente = new mongoose.Types.ObjectId().toString();
+    const response = await request(app).delete(`/ongs/${idInexistente}`);
+    expect(response.status).toBe(404);
+  });
+});
