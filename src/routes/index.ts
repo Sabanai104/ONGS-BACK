@@ -1,5 +1,6 @@
 import { Router } from "express";
 import ongsRouter from "./ongs";
+import categoriasRouter from "./categorias";
 
 const router = Router();
 
@@ -8,5 +9,6 @@ router.get("/health", (_, res) => {
 });
 
 router.use(ongsRouter);
+router.use(categoriasRouter);
 
 export default router;

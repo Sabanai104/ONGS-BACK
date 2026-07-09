@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "test": "jest",
     "test:watch": "jest --watch",
-    "seed": "ts-node src/scripts/seedOngs.ts"
+    "seed": "ts-node src/scripts/seedOngs.ts",
+    "seed:categorias": "ts-node src/scripts/seedCategorias.ts"
   },
   "keywords": [],
   "author": "",
