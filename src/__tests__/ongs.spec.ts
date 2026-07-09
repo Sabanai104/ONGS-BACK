@@ -232,3 +232,70 @@ describe("POST /ongs", () => {
     expect(response.status).toBe(400);
   });
 });
+
+describe("PUT /ongs/:id", () => {
+  it("atualiza parcialmente uma ONG, mantendo os campos não enviados", async () => {
+    const ong = await criarOng();
+
+    const response = await request(app).put(`/ongs/${ong.id}`).send({ titulo: "Novo Nome" });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      id: ong.id,
+      titulo: "Novo Nome",
+      imagem: "https://cdn.exemplo.com/img.jpg",
+      descricao: "Descrição da ONG",
+      comoAjudar: "Como ajudar a ONG",
+      impactosRealizados: "Impactos já realizados",
+      localizacao: {
+        latitude: -23.55052,
+        longitude: -46.633308,
+        nomeEndereco: "Av. Paulista, 1000"
+      },
+      linkSite: null,
+      linkInstagram: null,
+      categorias: ["educação"],
+      createdAt: expect.any(String),
+      updatedAt: expect.any(String)
+    });
+  });
+
+  it("atualiza localizacao e re-deriva localizacaoGeo (verificado via busca por proximidade)", async () => {
+    const ong = await criarOng();
+    const novoPonto = { latitude: 40.7128, longitude: -74.006, nomeEndereco: "Nova York" };
+
+    const response = await request(app).put(`/ongs/${ong.id}`).send({ localizacao: novoPonto });
+    expect(response.status).toBe(200);
+
+    const buscaPontoAntigo = await request(app)
+      .get("/ongs")
+      .query({ lat: -23.55052, lng: -46.633308, raioKm: 1 });
+    expect(buscaPontoAntigo.body.data).toHaveLength(0);
+
+    const buscaPontoNovo = await request(app)
+      .get("/ongs")
+      .query({ lat: novoPonto.latitude, lng: novoPonto.longitude, raioKm: 1 });
+    expect(buscaPontoNovo.body.data).toHaveLength(1);
+  });
+
+  it("retorna 400 para id em formato inválido", async () => {
+    const response = await request(app).put("/ongs/id-invalido").send({ titulo: "Novo Nome" });
+    expect(response.status).toBe(400);
+  });
+
+  it("retorna 404 quando a ONG não existe", async () => {
+    const idInexistente = new mongoose.Types.ObjectId().toString();
+    const response = await request(app).put(`/ongs/${idInexistente}`).send({ titulo: "Novo Nome" });
+    expect(response.status).toBe(404);
+  });
+
+  it("retorna 400 quando 'localizacao.latitude' é inválida", async () => {
+    const ong = await criarOng();
+
+    const response = await request(app)
+      .put(`/ongs/${ong.id}`)
+      .send({ localizacao: { latitude: "não-numero", longitude: -46.633308, nomeEndereco: "X" } });
+
+    expect(response.status).toBe(400);
+  });
+});

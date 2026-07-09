@@ -14,10 +14,11 @@ Está dentro do escopo:
 - Endpoint `GET /ongs` (listagem resumida).
 - Endpoint `GET /ongs/:id` (detalhe completo).
 - Endpoint `POST /ongs` (criação).
+- Endpoint `PUT /ongs/:id` (edição).
 - Validações e tratamento de erros dos endpoints.
 
 Fora do escopo deste documento:
-- Edição e remoção de ONGs (`PUT`/`PATCH`/`DELETE`).
+- Remoção de ONGs (`DELETE`).
 - Autenticação/autorização.
 - Upload de imagens (o campo de imagem assume que já existe uma URL disponível).
 
@@ -210,12 +211,63 @@ Retorna o recurso criado, no mesmo formato de `GET /ongs/:id` (ver 4.2), incluin
 
 A mensagem de erro em `400` lista os campos inválidos, ex.: `{ "message": "Campos inválidos: titulo, localizacao.latitude." }`.
 
+---
+
+### 4.4 `PUT /ongs/:id` — Editar ONG
+
+**Descrição:** atualiza parcialmente os dados de uma ONG existente. Apenas os campos enviados no body são alterados; campos omitidos mantêm o valor atual.
+
+**Request**
+- Método: `PUT`
+- Path: `/ongs/:id`
+- Path param: `id` — ObjectId da ONG
+- Body (`application/json`) — qualquer subconjunto dos campos abaixo:
+
+```json
+{
+  "titulo": "Novo Nome",
+  "linkInstagram": "https://www.instagram.com/novoperfil"
+}
+```
+
+| Campo | Observações |
+|---|---|
+| `titulo` | |
+| `imagem` | URL |
+| `descricao` | |
+| `comoAjudar` | |
+| `impactosRealizados` | |
+| `localizacao` | Se enviado, substitui o subdocumento inteiro (`latitude`, `longitude` e `nomeEndereco` juntos — não há merge campo a campo dentro de `localizacao`) |
+| `linkSite` | |
+| `linkInstagram` | |
+| `categorias` | |
+
+**Response — 200 OK**
+
+Retorna o recurso atualizado, no mesmo formato de `GET /ongs/:id` (ver 4.2).
+
+**Regras de negócio**
+- Apenas os mesmos campos aceitos por `POST /ongs` são lidos do body (whitelist); qualquer outro campo enviado (ex.: `localizacaoGeo`, `id`) é ignorado.
+- Campos omitidos no body preservam o valor atual da ONG (atualização parcial, não substituição completa).
+- Se `localizacao` for enviada, `localizacaoGeo` é automaticamente recalculado no servidor a partir do novo `latitude`/`longitude` (ver seção 8).
+- A validação de tipos é feita pelo schema Mongoose; qualquer violação retorna `400`.
+
+**Erros**
+| Status | Cenário |
+|---|---|
+| 400 | `id` com formato inválido |
+| 400 | Campo com tipo inválido (ex.: `localizacao.latitude` não numérico) |
+| 404 | ONG não encontrada |
+| 500 | Erro inesperado |
+
+A mensagem de erro em `400` de validação lista os campos inválidos, no mesmo formato de `POST /ongs`.
+
 ## 5. Requisitos não funcionais
 
 - Endpoints devem responder com `Content-Type: application/json`.
 - Estrutura de rotas deve seguir o padrão já existente em `src/routes/index.ts` (Express Router).
 - Modelo deve seguir o padrão já existente em `src/models/User.ts` (Mongoose Schema + `model()`).
-- Cobertura de testes (Jest + Supertest) para os três endpoints, incluindo os casos de erro (400/404) e o caso de lista vazia.
+- Cobertura de testes (Jest + Supertest) para os quatro endpoints, incluindo os casos de erro (400/404) e o caso de lista vazia.
 
 ## 6. Perguntas em aberto (respondidas)
 
@@ -271,7 +323,7 @@ A mensagem de erro em `400` lista os campos inválidos, ex.: `{ "message": "Camp
 
 ## 8. Implementação
 
-- Modelo: `src/models/Ong.ts` — schema Mongoose com `localizacao` (lat/long/nomeEndereco expostos na API) e um campo interno `localizacaoGeo` (GeoJSON `Point`, indexado com `2dsphere`) mantido em sincronia via hook `pre("validate")`, usado apenas para viabilizar a busca por proximidade (`$geoNear`). Esse hook só é executado em `.save()`/`Model.create()` — por isso a criação (`POST /ongs`) usa `Ong.create(...)`, nunca um update baseado em query (`findOneAndUpdate` não dispararia o hook e deixaria `localizacaoGeo` desatualizado).
-- Controller: `src/controllers/ongController.ts` — `listarOngs`, `buscarOngPorId` e `criarOng`. `criarOng` extrai explicitamente os campos aceitos do `req.body` (whitelist), delega a validação de obrigatoriedade/tipo ao schema Mongoose e mapeia `mongoose.Error.ValidationError` para `400` com mensagem citando os campos inválidos.
-- Rotas: `src/routes/ongs.ts` (`GET /ongs`, `GET /ongs/:id`, `POST /ongs`), montadas em `src/routes/index.ts`.
-- Testes: `src/__tests__/ongs.spec.ts`, usando `mongodb-memory-server` para subir um MongoDB em memória (o suite existente de `health.spec.ts` não usa banco). O bloco `describe("POST /ongs", ...)` cobre o caso de sucesso (201, shape completo do recurso), a derivação de `localizacaoGeo` (verificada indiretamente via busca por proximidade) e os casos de `400` (campo obrigatório ausente e tipo inválido).
+- Modelo: `src/models/Ong.ts` — schema Mongoose com `localizacao` (lat/long/nomeEndereco expostos na API) e um campo interno `localizacaoGeo` (GeoJSON `Point`, indexado com `2dsphere`) mantido em sincronia via hook `pre("validate")`, usado apenas para viabilizar a busca por proximidade (`$geoNear`). Esse hook só é executado em `.save()`/`Model.create()` — por isso tanto a criação (`POST /ongs`, via `Ong.create(...)`) quanto a edição (`PUT /ongs/:id`, via `Ong.findById(...)` + `.save()`) evitam updates baseados em query (`findByIdAndUpdate`/`findOneAndUpdate` não disparam o hook e deixariam `localizacaoGeo` desatualizado).
+- Controller: `src/controllers/ongController.ts` — `listarOngs`, `buscarOngPorId`, `criarOng` e `atualizarOng`. `criarOng`/`atualizarOng` extraem explicitamente os campos aceitos do `req.body` (whitelist), delegam a validação de tipo/obrigatoriedade ao schema Mongoose e mapeiam `mongoose.Error.ValidationError` para `400` com mensagem citando os campos inválidos. `atualizarOng` só atribui um campo na instância se ele vier `!== undefined` no body, implementando a atualização parcial.
+- Rotas: `src/routes/ongs.ts` (`GET /ongs`, `GET /ongs/:id`, `POST /ongs`, `PUT /ongs/:id`), montadas em `src/routes/index.ts`.
+- Testes: `src/__tests__/ongs.spec.ts`, usando `mongodb-memory-server` para subir um MongoDB em memória (o suite existente de `health.spec.ts` não usa banco). O bloco `describe("POST /ongs", ...)` cobre o caso de sucesso (201, shape completo do recurso), a derivação de `localizacaoGeo` (verificada indiretamente via busca por proximidade) e os casos de `400` (campo obrigatório ausente e tipo inválido). O bloco `describe("PUT /ongs/:id", ...)` cobre a atualização parcial (demais campos preservados), a re-derivação de `localizacaoGeo` ao editar `localizacao` (verificada via busca por proximidade nos pontos antigo e novo), `400` para `id` inválido e para tipo inválido, e `404` para ONG inexistente.

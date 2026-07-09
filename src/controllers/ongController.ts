@@ -181,3 +181,58 @@ export async function criarOng(req: Request, res: Response) {
     return res.status(500).json({ message: "Erro interno ao criar ONG." });
   }
 }
+
+export async function atualizarOng(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id);
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Id inválido." });
+    }
+
+    const ong = await Ong.findById(id);
+
+    if (!ong) {
+      return res.status(404).json({ message: "ONG não encontrada." });
+    }
+
+    const {
+      titulo,
+      imagem,
+      descricao,
+      comoAjudar,
+      impactosRealizados,
+      localizacao,
+      linkSite,
+      linkInstagram,
+      categorias
+    } = req.body ?? {};
+
+    if (titulo !== undefined) ong.titulo = titulo;
+    if (imagem !== undefined) ong.imagem = imagem;
+    if (descricao !== undefined) ong.descricao = descricao;
+    if (comoAjudar !== undefined) ong.comoAjudar = comoAjudar;
+    if (impactosRealizados !== undefined) ong.impactosRealizados = impactosRealizados;
+    if (localizacao !== undefined) {
+      ong.localizacao = {
+        latitude: localizacao.latitude,
+        longitude: localizacao.longitude,
+        nomeEndereco: localizacao.nomeEndereco
+      };
+    }
+    if (linkSite !== undefined) ong.linkSite = linkSite;
+    if (linkInstagram !== undefined) ong.linkInstagram = linkInstagram;
+    if (categorias !== undefined) ong.categorias = categorias;
+
+    await ong.save();
+
+    return res.json(ong.toJSON());
+  } catch (error) {
+    if (error instanceof mongoose.Error.ValidationError) {
+      const campos = Object.keys(error.errors).join(", ");
+      return res.status(400).json({ message: `Campos inválidos: ${campos}.` });
+    }
+    console.error("❌ Erro ao atualizar ONG", error);
+    return res.status(500).json({ message: "Erro interno ao atualizar ONG." });
+  }
+}
