@@ -2,6 +2,7 @@ import "dotenv/config";
 import mongoose from "mongoose";
 import { connectDB } from "../config/database";
 import { Ong } from "../models/Ong";
+import { resolverCategoriasPorSlug } from "../utils/resolverCategorias";
 
 /**
  * Dados reais de ONGs brasileiras conhecidas, levantados via busca na web
@@ -33,7 +34,7 @@ const ongsSeed = [
     },
     linkSite: "https://amigosdobem.org/",
     linkInstagram: "https://www.instagram.com/amigosdobem/",
-    categorias: ["combate à fome", "educação", "assistência social"]
+    categorias: ["combate-a-fome", "educacao", "assistencia-social"]
   },
   {
     titulo: "AACD",
@@ -50,7 +51,7 @@ const ongsSeed = [
     },
     linkSite: "https://aacd.org.br/",
     linkInstagram: "https://www.instagram.com/aacdoficial/",
-    categorias: ["saúde", "inclusão de pessoas com deficiência"]
+    categorias: ["saude", "inclusao-de-pessoas-com-deficiencia"]
   },
   {
     titulo: "GRAACC",
@@ -67,7 +68,7 @@ const ongsSeed = [
     },
     linkSite: "https://graacc.org.br/",
     linkInstagram: "https://www.instagram.com/instagraacc/",
-    categorias: ["saúde", "combate ao câncer infantil"]
+    categorias: ["saude", "combate-ao-cancer-infantil"]
   },
   {
     titulo: "Fundação SOS Mata Atlântica",
@@ -85,7 +86,7 @@ const ongsSeed = [
     },
     linkSite: "https://www.sosma.org.br/",
     linkInstagram: "https://www.instagram.com/sosmataatlantica/",
-    categorias: ["meio ambiente", "conservação"]
+    categorias: ["meio-ambiente", "conservacao"]
   },
   {
     titulo: "Gerando Falcões",
@@ -102,7 +103,7 @@ const ongsSeed = [
     },
     linkSite: "https://www.gerandofalcoes.com/",
     linkInstagram: "https://www.instagram.com/gerandofalcoes/",
-    categorias: ["assistência social", "combate à pobreza"]
+    categorias: ["assistencia-social", "combate-a-pobreza"]
   },
   {
     titulo: "WWF-Brasil",
@@ -119,7 +120,7 @@ const ongsSeed = [
     },
     linkSite: "https://www.wwf.org.br/",
     linkInstagram: "https://www.instagram.com/wwfbrasil/",
-    categorias: ["meio ambiente", "conservação da biodiversidade"]
+    categorias: ["meio-ambiente", "conservacao-da-biodiversidade"]
   },
   {
     titulo: "Instituto Ayrton Senna",
@@ -137,7 +138,7 @@ const ongsSeed = [
     },
     linkSite: "https://institutoayrtonsenna.org.br/",
     linkInstagram: "https://www.instagram.com/institutoayrtonsenna/",
-    categorias: ["educação"]
+    categorias: ["educacao"]
   },
   {
     titulo: "Ação da Cidadania",
@@ -154,14 +155,25 @@ const ongsSeed = [
     },
     linkSite: "https://www.acaodacidadania.org.br/",
     linkInstagram: "https://www.instagram.com/acaodacidadania/",
-    categorias: ["combate à fome", "assistência social"]
+    categorias: ["combate-a-fome", "assistencia-social"]
   }
 ];
 
 async function seed() {
   await connectDB();
 
+  const todosOsSlugs = [...new Set(ongsSeed.flatMap((o) => o.categorias))];
+  const { naoEncontrados } = await resolverCategoriasPorSlug(todosOsSlugs);
+  if (naoEncontrados.length > 0) {
+    throw new Error(
+      `Categorias não encontradas (rode "npm run seed:categorias" primeiro): ${naoEncontrados.join(", ")}`
+    );
+  }
+
   for (const ongData of ongsSeed) {
+    const { ids: categoriaIds } = await resolverCategoriasPorSlug(ongData.categorias);
+    const dados = { ...ongData, categorias: categoriaIds };
+
     // Usamos documentos (create/save) em vez de findOneAndUpdate para que o hook
     // pre("validate") do model recalcule `localizacaoGeo` (necessário para o índice
     // 2dsphere usado na busca por proximidade) — esse hook não é executado em updates
@@ -169,10 +181,10 @@ async function seed() {
     const existente = await Ong.findOne({ titulo: ongData.titulo });
 
     if (existente) {
-      existente.set(ongData);
+      existente.set(dados);
       await existente.save();
     } else {
-      await Ong.create(ongData);
+      await Ong.create(dados);
     }
 
     console.log(`✅ ${ongData.titulo}`);

@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
 import { Ong } from "../models/Ong";
+import { Categoria } from "../models/Categoria";
+import { resolverCategoriasPorSlug } from "../utils/resolverCategorias";
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
@@ -13,10 +15,6 @@ const SUMMARY_PROJECTION = {
   "localizacao.latitude": 1,
   "localizacao.longitude": 1
 };
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 function parsePositiveInt(value: unknown, fallback: number): number {
   const parsed = parseInt(String(value ?? fallback), 10);
@@ -65,9 +63,21 @@ export async function listarOngs(req: Request, res: Response) {
       return res.status(400).json({ message: "'raioKm' inválido." });
     }
 
-    const matchFilter: Record<string, unknown> = {};
+    let categoriaId: mongoose.Types.ObjectId | undefined;
     if (categoria) {
-      matchFilter.categorias = { $regex: new RegExp(`^${escapeRegex(categoria)}$`, "i") };
+      const categoriaDoc = await Categoria.findOne({ slug: categoria.toLowerCase() });
+      if (!categoriaDoc) {
+        return res.json({ data: [], pagination: { page, limit, total: 0, totalPages: 0 } });
+      }
+      categoriaId = categoriaDoc._id;
+    }
+
+    const matchFilter: Record<string, unknown> = {};
+    if (categoriaId) {
+      // categoriaId precisa continuar sendo um ObjectId de verdade (não string) até aqui:
+      // o $geoNear abaixo roda dentro de .aggregate() e não passa pela camada de cast
+      // automático do Mongoose, diferente do Ong.find() do outro branch.
+      matchFilter.categorias = categoriaId;
     }
 
     let data: ReturnType<typeof mapAggregateToSummary>[];
@@ -126,7 +136,7 @@ export async function buscarOngPorId(req: Request, res: Response) {
       return res.status(400).json({ message: "Id inválido." });
     }
 
-    const ong = await Ong.findById(id);
+    const ong = await Ong.findById(id).populate("categorias");
 
     if (!ong) {
       return res.status(404).json({ message: "ONG não encontrada." });
@@ -153,6 +163,11 @@ export async function criarOng(req: Request, res: Response) {
       categorias
     } = req.body ?? {};
 
+    const { ids: categoriaIds, naoEncontrados } = await resolverCategoriasPorSlug(categorias ?? []);
+    if (naoEncontrados.length > 0) {
+      return res.status(400).json({ message: `Categorias inválidas: ${naoEncontrados.join(", ")}.` });
+    }
+
     const ong = await Ong.create({
       titulo,
       imagem,
@@ -168,9 +183,10 @@ export async function criarOng(req: Request, res: Response) {
         : undefined,
       linkSite: linkSite ?? null,
       linkInstagram: linkInstagram ?? null,
-      categorias: categorias ?? []
+      categorias: categoriaIds
     });
 
+    await ong.populate("categorias");
     return res.status(201).json(ong.toJSON());
   } catch (error) {
     if (error instanceof mongoose.Error.ValidationError) {
@@ -222,9 +238,16 @@ export async function atualizarOng(req: Request, res: Response) {
     }
     if (linkSite !== undefined) ong.linkSite = linkSite;
     if (linkInstagram !== undefined) ong.linkInstagram = linkInstagram;
-    if (categorias !== undefined) ong.categorias = categorias;
+    if (categorias !== undefined) {
+      const { ids: categoriaIds, naoEncontrados } = await resolverCategoriasPorSlug(categorias);
+      if (naoEncontrados.length > 0) {
+        return res.status(400).json({ message: `Categorias inválidas: ${naoEncontrados.join(", ")}.` });
+      }
+      ong.categorias = categoriaIds;
+    }
 
     await ong.save();
+    await ong.populate("categorias");
 
     return res.json(ong.toJSON());
   } catch (error) {

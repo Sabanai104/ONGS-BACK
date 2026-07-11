@@ -2,15 +2,7 @@ import "dotenv/config";
 import mongoose from "mongoose";
 import { connectDB } from "../config/database";
 import { Categoria } from "../models/Categoria";
-
-function slugify(valor: string): string {
-  return valor
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-}
+import { slugify } from "../utils/slugify";
 
 const nomesCategorias = [
   "combate à fome",
@@ -22,7 +14,8 @@ const nomesCategorias = [
   "meio ambiente",
   "conservação",
   "combate à pobreza",
-  "conservação da biodiversidade"
+  "conservação da biodiversidade",
+  "apoio a mulheres"
 ];
 
 async function seed() {

@@ -10,7 +10,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "seed": "ts-node src/scripts/seedOngs.ts",
-    "seed:categorias": "ts-node src/scripts/seedCategorias.ts"
+    "seed:categorias": "ts-node src/scripts/seedCategorias.ts",
+    "migrate:categorias-objectid": "ts-node src/scripts/migrarCategoriasParaObjectId.ts"
   },
   "keywords": [],
   "author": "",

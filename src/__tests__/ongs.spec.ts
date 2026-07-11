@@ -3,13 +3,21 @@ import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import app from "../app";
 import { Ong } from "../models/Ong";
+import { Categoria } from "../models/Categoria";
 
 let mongoServer: MongoMemoryServer;
+let categoriaEducacao: InstanceType<typeof Categoria>;
+let categoriaSaude: InstanceType<typeof Categoria>;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri());
   await Ong.init();
+  await Categoria.init();
+  [categoriaEducacao, categoriaSaude] = await Categoria.create([
+    { nome: "Educação", slug: "educacao" },
+    { nome: "Saúde", slug: "saude" }
+  ]);
 });
 
 afterEach(async () => {
@@ -29,7 +37,7 @@ const criarOng = (overrides: Record<string, unknown> = {}) =>
     comoAjudar: "Como ajudar a ONG",
     impactosRealizados: "Impactos já realizados",
     localizacao: { latitude: -23.55052, longitude: -46.633308, nomeEndereco: "Av. Paulista, 1000" },
-    categorias: ["educação"],
+    categorias: [categoriaEducacao._id],
     ...overrides
   });
 
@@ -70,14 +78,45 @@ describe("GET /ongs", () => {
   });
 
   it("filtra por categoria (case-insensitive)", async () => {
-    await criarOng({ titulo: "Educação ONG", categorias: ["Educação"] });
-    await criarOng({ titulo: "Saúde ONG", categorias: ["saúde"] });
+    await criarOng({ titulo: "Educação ONG", categorias: [categoriaEducacao._id] });
+    await criarOng({ titulo: "Saúde ONG", categorias: [categoriaSaude._id] });
 
-    const response = await request(app).get("/ongs").query({ categoria: "SAÚDE" });
+    const response = await request(app).get("/ongs").query({ categoria: "SAUDE" });
 
     expect(response.status).toBe(200);
     expect(response.body.data).toHaveLength(1);
     expect(response.body.data[0].titulo).toBe("Saúde ONG");
+  });
+
+  it("retorna lista vazia quando o slug de categoria não existe", async () => {
+    await criarOng();
+
+    const response = await request(app).get("/ongs").query({ categoria: "categoria-inexistente" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual([]);
+    expect(response.body.pagination).toEqual({ page: 1, limit: 10, total: 0, totalPages: 0 });
+  });
+
+  it("filtra por categoria combinado com busca por proximidade geográfica", async () => {
+    await criarOng({
+      titulo: "Perto e da categoria certa",
+      categorias: [categoriaSaude._id],
+      localizacao: { latitude: -23.55, longitude: -46.63, nomeEndereco: "Perto" }
+    });
+    await criarOng({
+      titulo: "Perto mas de outra categoria",
+      categorias: [categoriaEducacao._id],
+      localizacao: { latitude: -23.55, longitude: -46.63, nomeEndereco: "Perto" }
+    });
+
+    const response = await request(app)
+      .get("/ongs")
+      .query({ categoria: "saude", lat: -23.55, lng: -46.63, raioKm: 50 });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].titulo).toBe("Perto e da categoria certa");
   });
 
   it("busca por proximidade geográfica dentro do raio informado", async () => {
@@ -140,7 +179,15 @@ describe("GET /ongs/:id", () => {
       },
       linkSite: null,
       linkInstagram: null,
-      categorias: ["educação"],
+      categorias: [
+        {
+          id: expect.any(String),
+          nome: "Educação",
+          slug: "educacao",
+          createdAt: expect.any(String),
+          updatedAt: expect.any(String)
+        }
+      ],
       createdAt: expect.any(String),
       updatedAt: expect.any(String)
     });
@@ -168,7 +215,7 @@ describe("POST /ongs", () => {
     comoAjudar: "Como ajudar a ONG",
     impactosRealizados: "Impactos já realizados",
     localizacao: { latitude: -23.55052, longitude: -46.633308, nomeEndereco: "Av. Paulista, 1000" },
-    categorias: ["educação"],
+    categorias: ["educacao"],
     ...overrides
   });
 
@@ -190,7 +237,15 @@ describe("POST /ongs", () => {
       },
       linkSite: null,
       linkInstagram: null,
-      categorias: ["educação"],
+      categorias: [
+        {
+          id: expect.any(String),
+          nome: "Educação",
+          slug: "educacao",
+          createdAt: expect.any(String),
+          updatedAt: expect.any(String)
+        }
+      ],
       createdAt: expect.any(String),
       updatedAt: expect.any(String)
     });
@@ -231,6 +286,14 @@ describe("POST /ongs", () => {
 
     expect(response.status).toBe(400);
   });
+
+  it("retorna 400 quando uma categoria informada não existe", async () => {
+    const response = await request(app)
+      .post("/ongs")
+      .send(payloadOngValida({ categorias: ["categoria-inexistente"] }));
+
+    expect(response.status).toBe(400);
+  });
 });
 
 describe("PUT /ongs/:id", () => {
@@ -254,7 +317,15 @@ describe("PUT /ongs/:id", () => {
       },
       linkSite: null,
       linkInstagram: null,
-      categorias: ["educação"],
+      categorias: [
+        {
+          id: expect.any(String),
+          nome: "Educação",
+          slug: "educacao",
+          createdAt: expect.any(String),
+          updatedAt: expect.any(String)
+        }
+      ],
       createdAt: expect.any(String),
       updatedAt: expect.any(String)
     });
@@ -295,6 +366,14 @@ describe("PUT /ongs/:id", () => {
     const response = await request(app)
       .put(`/ongs/${ong.id}`)
       .send({ localizacao: { latitude: "não-numero", longitude: -46.633308, nomeEndereco: "X" } });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("retorna 400 quando uma categoria informada não existe", async () => {
+    const ong = await criarOng();
+
+    const response = await request(app).put(`/ongs/${ong.id}`).send({ categorias: ["categoria-inexistente"] });
 
     expect(response.status).toBe(400);
   });

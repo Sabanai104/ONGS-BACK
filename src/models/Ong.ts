@@ -1,4 +1,5 @@
-import { Schema, model } from "mongoose";
+import { Schema, model, Types } from "mongoose";
+import { Categoria } from "./Categoria";
 
 interface ILocalizacao {
   latitude: number;
@@ -21,7 +22,7 @@ export interface IOng {
   localizacaoGeo: IGeoPoint;
   linkSite: string | null;
   linkInstagram: string | null;
-  categorias: string[];
+  categorias: Types.ObjectId[];
 }
 
 const LocalizacaoSchema = new Schema<ILocalizacao>(
@@ -47,7 +48,22 @@ const OngSchema = new Schema<IOng>(
     },
     linkSite: { type: String, default: null },
     linkInstagram: { type: String, default: null },
-    categorias: { type: [String], required: true, default: [] }
+    categorias: {
+      type: [{ type: Schema.Types.ObjectId, ref: "Categoria" }],
+      required: true,
+      default: [],
+      // Defesa em profundidade: caminhos que gravam em Ong diretamente (ex.: seedOngs.ts)
+      // não passam pela resolução de slug do controller, então confirmamos aqui que
+      // cada _id realmente existe em Categoria antes de persistir.
+      validate: {
+        validator: async function (ids: Types.ObjectId[]) {
+          if (!Array.isArray(ids) || ids.length === 0) return true;
+          const count = await Categoria.countDocuments({ _id: { $in: ids } });
+          return count === ids.length;
+        },
+        message: "Uma ou mais categorias informadas não existem."
+      }
+    }
   },
   {
     timestamps: true,
